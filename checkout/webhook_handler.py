@@ -9,6 +9,8 @@ from profiles.models import UserProfile
 
 import json
 import time
+import stripe
+
 
 class StripeWH_Handler:
     """Handle Stripe webhooks"""
@@ -18,6 +20,7 @@ class StripeWH_Handler:
 
     def _send_confirmation_email(self, order):
         """Send the user a confirmation email"""
+        print("IN SEND FUNCTION")
         cust_email = order.email
         subject = render_to_string(
             'checkout/confirmation_emails/confirmation_email_subject.txt',
@@ -50,9 +53,14 @@ class StripeWH_Handler:
         bag = intent.metadata.bag
         save_info = intent.metadata.save_info
 
-        billing_details = intent.charges.data[0].billing_details
+        # Get the Charge object
+        stripe_charge = stripe.Charge.retrieve(
+            intent.latest_charge
+        )
+
+        billing_details = stripe_charge.billing_details 
         shipping_details = intent.shipping
-        grand_total = round(intent.charges.data[0].amount / 100, 2)
+        grand_total = round(stripe_charge.amount / 100, 2) 
 
         # Clean data in the shipping details
         for field, value in shipping_details.address.items():
@@ -98,11 +106,13 @@ class StripeWH_Handler:
                 attempt += 1
                 time.sleep(1)
         if order_exists:
+            print("ORDER EXISTS")
             self._send_confirmation_email(order)
             return HttpResponse(
                 content=f'Webhook received: {event["type"]} | SUCCESS: Verified order already in database',
                 status=200)
         else:
+            print("IN ELSE STATEMENT")
             order = None
             try:
                 order = Order.objects.create(
@@ -137,6 +147,7 @@ class StripeWH_Handler:
                                 product_size=size,
                             )
                             order_line_item.save()
+                print("ORDER IS CREATED:", order)
             except Exception as e:
                 if order:
                     order.delete()
